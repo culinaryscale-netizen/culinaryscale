@@ -27,28 +27,37 @@ export const RecipeView: React.FC = () => {
   const [viewImage, setViewImage] = useState<string | null>(null);
   const [showDescription, setShowDescription] = useState(false);
 
-function parseQuantity(qty: string): number {
-  if (!qty) return 0;
+function parseQuantity(qty: string | number): number {
+  if (qty === null || qty === undefined) return 0;
+
+  // If quantity is already a number (old data)
+  if (typeof qty === "number") {
+    return qty;
+  }
+
+  // Now it's guaranteed to be a string
+  const q = qty.trim();
 
   // Handle fractions like "1/2"
-  if (qty.includes("/")) {
-    const [a, b] = qty.split("/").map(Number);
+  if (q.includes("/")) {
+    const [a, b] = q.split("/").map(Number);
     if (!isNaN(a) && !isNaN(b) && b !== 0) {
       return a / b;
     }
     return NaN;
   }
-  
-
 
   // Handle decimals & integers
-  const n = Number(qty);
+  const n = Number(q);
   return isNaN(n) ? NaN : n;
 }
 
-function isFraction(qty: string): boolean {
-  return /^[0-9]+\s*\/\s*[0-9]+$/.test(qty);
+
+function isFraction(qty: string | number): boolean {
+  if (typeof qty !== "string") return false;
+  return /^[0-9]+\s*\/\s*[0-9]+$/.test(qty.trim());
 }
+
 function toFraction(value: number, maxDenominator = 16): string {
   if (isNaN(value)) return "—";
 
