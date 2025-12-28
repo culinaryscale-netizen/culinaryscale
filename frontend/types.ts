@@ -13,7 +13,7 @@ export interface TasteAdjustmentConfig {
 export interface Ingredient {
   id: string;
   name: string;
-  quantity: number;
+  quantity: string;
   unit: string;
   type: IngredientType;
   constantLimit?: number;

@@ -27,6 +27,49 @@ export const RecipeView: React.FC = () => {
   const [viewImage, setViewImage] = useState<string | null>(null);
   const [showDescription, setShowDescription] = useState(false);
 
+function parseQuantity(qty: string): number {
+  if (!qty) return 0;
+
+  // Handle fractions like "1/2"
+  if (qty.includes("/")) {
+    const [a, b] = qty.split("/").map(Number);
+    if (!isNaN(a) && !isNaN(b) && b !== 0) {
+      return a / b;
+    }
+    return NaN;
+  }
+  
+
+
+  // Handle decimals & integers
+  const n = Number(qty);
+  return isNaN(n) ? NaN : n;
+}
+
+function isFraction(qty: string): boolean {
+  return /^[0-9]+\s*\/\s*[0-9]+$/.test(qty);
+}
+function toFraction(value: number, maxDenominator = 16): string {
+  if (isNaN(value)) return "—";
+
+  let bestNumerator = 1;
+  let bestDenominator = 1;
+  let bestError = Math.abs(value - 1);
+
+  for (let d = 1; d <= maxDenominator; d++) {
+    const n = Math.round(value * d);
+    const error = Math.abs(value - n / d);
+
+    if (error < bestError) {
+      bestError = error;
+      bestNumerator = n;
+      bestDenominator = d;
+    }
+  }
+
+  return `${bestNumerator}/${bestDenominator}`;
+}
+
 
 
 
@@ -53,74 +96,95 @@ export const RecipeView: React.FC = () => {
   const scaledIngredients = useMemo(() => {
     if (!recipe) return [];
 
-    return recipe.ingredients.map(ing => {
-      let scaledQty = ing.quantity;
-      let scalingLabel = '';
+    return recipe.ingredients.map((ing) => {
+      const baseQty = parseQuantity(ing.quantity);
+      const baseWasFraction = isFraction(ing.quantity);
+ // ✅ string → number
+      let scaledQty = baseQty;
+      let scalingLabel = "";
       const limit = ing.constantLimit || 6;
+
+      // Guard: invalid quantity
+      if (isNaN(baseQty)) {
+        return {
+          ...ing,
+          scaledQty: NaN,
+          baseScaledQty: NaN,
+          scalingLabel: "Invalid quantity",
+          limit,
+          isAdjusted: false,
+          adjustmentLabel: "",
+        };
+      }
 
       // 1. Base Scaling Logic
       if (ing.type === IngredientType.NORMAL) {
-        scaledQty = ing.quantity * (servings / recipe.baseServings);
+        scaledQty = baseQty * (servings / recipe.baseServings);
       } else {
         // Constant Logic
         if (servings <= limit) {
-            scaledQty = ing.quantity;
-            scalingLabel = `Constant (Batch ≤ ${limit})`;
+          scaledQty = baseQty;
+          scalingLabel = `Constant (Batch ≤ ${limit})`;
         } else {
-            scaledQty = ing.quantity * (servings / limit);
-            scalingLabel = `Scaled (Batch > ${limit})`;
+          scaledQty = baseQty * (servings / limit);
+          scalingLabel = `Scaled (Batch > ${limit})`;
         }
       }
 
       // 2. Taste Adjustment Logic
       let tasteMultiplier = 1;
       let isAdjusted = false;
-      let adjustmentLabel = '';
+      let adjustmentLabel = "";
 
       if (ing.isTasteAdjustable) {
         const config = ing.tasteAdjustmentConfig;
-        
-        if (tasteProfile === 'MILD') {
-            const reduction = config?.mildReductionPercentage ?? 20;
-            tasteMultiplier = Math.max(0, 1 - (reduction / 100));
-        } else if (tasteProfile === 'SPICY') {
-            const increase = config?.spicyIncreasePercentage ?? 30;
-            tasteMultiplier = 1 + (increase / 100);
-        } else if (tasteProfile === 'INDIAN_BOOST') {
-            const increase = config?.indianBoostIncreasePercentage ?? 60;
-            tasteMultiplier = 1 + (increase / 100);
-        } else {
-            // MEDIUM or default
-            tasteMultiplier = 1.0;
+
+        if (tasteProfile === "MILD") {
+          tasteMultiplier = 1 - (config?.mildReductionPercentage ?? 20) / 100;
+        } else if (tasteProfile === "SPICY") {
+          tasteMultiplier = 1 + (config?.spicyIncreasePercentage ?? 30) / 100;
+        } else if (tasteProfile === "INDIAN_BOOST") {
+          tasteMultiplier =
+            1 + (config?.indianBoostIncreasePercentage ?? 60) / 100;
         }
 
         isAdjusted = tasteMultiplier !== 1;
-        
+
         if (isAdjusted) {
           const pct = Math.round((tasteMultiplier - 1) * 100);
-          adjustmentLabel = pct > 0 ? `+${pct}% Intensity` : `${pct}% Intensity`;
+          adjustmentLabel =
+            pct > 0 ? `+${pct}% Intensity` : `${pct}% Intensity`;
         }
       }
-      
+
       const finalQty = scaledQty * tasteMultiplier;
 
       return {
         ...ing,
+        baseWasFraction,
         scaledQty: finalQty,
+        baseScaledQty: scaledQty,
         scalingLabel,
         limit,
         isAdjusted,
         adjustmentLabel,
-        baseScaledQty: scaledQty // Keep track of what it would be without taste adjustment
       };
     });
+
   }, [recipe, servings, tasteProfile]);
 
-  const formatNumber = (num: number) => {
-    // If very small but not zero, show more precision
-    if (num > 0 && num < 0.1) return parseFloat(num.toFixed(3));
-    return Number.isInteger(num) ? num : parseFloat(num.toFixed(2));
+  const formatQuantity = (num: number, asFraction: boolean) => {
+    if (isNaN(num)) return "—";
+
+    if (asFraction) {
+      return toFraction(num);
+    }
+
+    if (num > 0 && num < 0.1) return num.toFixed(3);
+    return Number.isInteger(num) ? num : num.toFixed(2);
   };
+
+
 
   const handleServingsChange = (delta: number) => {
     setServings(prev => Math.max(1, prev + delta));
@@ -207,9 +271,7 @@ export const RecipeView: React.FC = () => {
             <div className="bg-white rounded-2xl shadow-lg border border-stone-200 p-6 max-w-4xl mx-auto">
               <div className="flex items-center gap-2 mb-3">
                 <Info className="w-5 h-5 text-chef-600" />
-                <h2 className="text-lg font-bold text-stone-900">
-                  Recipe
-                </h2>
+                <h2 className="text-lg font-bold text-stone-900">Recipe</h2>
               </div>
               <p className="text-stone-700 leading-relaxed text-sm md:text-base whitespace-pre-line">
                 {recipe.description}
@@ -423,7 +485,7 @@ export const RecipeView: React.FC = () => {
                           ing.isAdjusted ? "text-chef-600" : "text-stone-800"
                         }`}
                       >
-                        {formatNumber(ing.scaledQty)}
+                        {formatQuantity(ing.scaledQty, ing.baseWasFraction)}
                       </span>
                       <span className="text-sm font-bold text-stone-500">
                         {ing.unit}
@@ -434,7 +496,11 @@ export const RecipeView: React.FC = () => {
                     <div className="flex flex-col items-end text-xs font-medium text-stone-400 mt-0.5">
                       {ing.isAdjusted && (
                         <span className="line-through decoration-stone-300 text-stone-300">
-                          std: {formatNumber(ing.baseScaledQty)}
+                          std:{" "}
+                          {formatQuantity(
+                            ing.baseScaledQty,
+                            ing.baseWasFraction
+                          )}
                         </span>
                       )}
                       <span>base: {ing.quantity}</span>

@@ -7,7 +7,7 @@ const TasteAdjustmentConfigSchema = new Schema({
 const IngredientSchema = new Schema({
     id: { type: String },
     name: { type: String },
-    quantity: { type: Number },
+    quantity: { type: String },
     unit: { type: String },
     type: { type: String, enum: ["NORMAL", "CONSTANT"], default: "NORMAL" },
     constantLimit: { type: Number, default: 6 },
